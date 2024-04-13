@@ -16,3 +16,46 @@
   "현황": [],
   "진단_결과": ""
 }
+
+# Ensure the gcloud and gsutil commands are available
+if ! command -v gcloud &> /dev/null || ! command -v gsutil &> /dev/null
+then
+    echo "gcloud or gsutil is not installed. Please install the Google Cloud SDK."
+    exit 1
+fi
+
+# Authenticate and initialize the GCP environment
+echo "Authenticating the user with Google Cloud..."
+gcloud auth login
+
+# Set and configure the project
+echo "Please enter your Google Cloud project ID:"
+read project_id
+gcloud config set project $project_id
+
+# List all APIs and services enabled on the current project
+echo "Listing all enabled APIs and services..."
+gcloud services list --enabled
+
+# Creating API credentials (API key)
+echo "Creating a new API key. Please specify a name for the key:"
+read key_name
+gcloud alpha services api-keys create --display-name "$key_name"
+
+# List existing API keys and their details
+echo "Listing all API keys..."
+gcloud alpha services api-keys list
+
+# Optional: Setting restrictions on the API key
+echo "To set restrictions on the API key, please enter the key ID:"
+read key_id
+echo "Adding HTTP referrer restriction. Please enter the HTTP referrer:"
+read http_referrer
+gcloud alpha services api-keys update $key_id --add-restrictions http-referrers=$http_referrer
+
+# Verify the API key details
+echo "Verifying API key details..."
+gcloud alpha services api-keys describe $key_id
+
+# Completion message
+echo "GCP CLI for managing APIs is configured and ready for use."
