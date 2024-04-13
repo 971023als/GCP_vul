@@ -17,3 +17,32 @@
   "현황": [],
   "진단_결과": "양호"
 }
+
+# Google Cloud SDK 초기화 및 인증
+if ! command -v gcloud &> /dev/null
+then
+    echo "gcloud가 설치되어 있지 않습니다. Google Cloud SDK를 설치하세요."
+    exit 1
+fi
+
+echo "Google Cloud에 로그인합니다..."
+gcloud auth login
+
+# 프로젝트 설정
+echo "작업할 Google Cloud 프로젝트 ID를 입력하세요:"
+read project_id
+gcloud config set project $project_id
+
+# 사용자 인증 상태 확인
+echo "현재 MFA 상태를 확인합니다..."
+users=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
+
+for user in $users
+do
+  echo "확인 중: $user"
+  mfa_status=$(gcloud beta identity groups memberships check-access --member=$user --role="roles/mfa.enforced" --format="value(state)")
+  echo "MFA 상태: $mfa_status"
+done
+
+# MFA 설정 권장 안내
+echo "모든 사용자에게 MFA 설정을 권장합니다. Google 계정 보안 설정을 확인하세요."
