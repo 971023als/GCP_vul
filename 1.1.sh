@@ -1,39 +1,48 @@
 #!/bin/bash
 
-# 디렉터리 설정
-output_dir="./aws_audit_results"
-mkdir -p $output_dir
+{
+  "분류": "계정 관리",
+  "코드": "1.1",
+  "위험도": "중요도 상",
+  "진단_항목": "사용자 계정 관리",
+  "대응방안": {
+    "설명": "GCP에서는 다양한 유형의 계정을 사용하여 인증과 허가를 관리합니다. 이들 계정에 적절한 권한 관리와 보안 설정이 중요합니다.",
+    "설정방법": [
+      "IAM 내 사용자 추가",
+      "Google 계정 사용자 추가 (역할 부여: 소유자)",
+      "신규 사용자 추가 및 Google 계정에 최고 권한(소유자) 부여 확인",
+      "Google 계정 사용자 최고 권한(소유자) 획득을 위한 이메일 인증",
+      "프로젝트 내 최고 권한(소유자) 인증을 위한 초대 수락 버튼 클릭",
+      "추가된 신규 Google 계정 사용자 최종 권한 여부 확인"
+    ]
+  },
+  "현황": [],
+  "진단_결과": ""
+}
 
-# IAM 사용자, 그룹, 역할 리스트업
-echo "Saving list of IAM Users, Groups, and Roles..."
-aws iam list-users --output json > $output_dir/users.json
-aws iam list-groups --output json > $output_dir/groups.json
-aws iam list-roles --output json > $output_dir/roles.json
 
-# 관리자 권한을 보유한 계정 확인
-echo "Checking for accounts with administrative permissions and saving..."
-aws iam list-users --query 'Users[?AttachedManagedPolicies[?PolicyName==`AdministratorAccess`]].UserName' --output json > $output_dir/admin_users.json
+# GCP CLI 사용을 위한 gcloud 명령어 초기화 및 설정
+echo "Setting up GCP CLI and authenticating..."
+gcloud init --quiet
 
-# 불필요한 계정 식별
-echo "Identifying unnecessary accounts (e.g., test accounts) and saving..."
-aws iam list-users --query 'Users[?contains(UserName, `test`) || contains(UserName, `temp`)].UserName' --output json > $output_dir/unnecessary_users.json
+# IAM 사용자 추가
+echo "Adding IAM users..."
+gcloud iam service-accounts create service-account-name \
+    --description="Service account for managing project resources" \
+    --display-name="Project Manager Account"
 
-# Access Key 유효기간 확인 및 저장
-echo "Checking for expired Access Keys and saving..."
-current_date=$(date +%s)
-echo "[]" > $output_dir/expired_access_keys.json  # 초기 JSON 배열 파일 생성
+# IAM 역할 부여
+echo "Assigning roles to new IAM user..."
+gcloud projects add-iam-policy-binding project-id \
+    --member='user:user@example.com' \
+    --role='roles/owner'
 
-aws iam list-users --query 'Users[*].UserName' --output text | while read user; do
-  aws iam list-access-keys --user-name "$user" --query 'AccessKeyMetadata[?Status==`Active`].[AccessKeyId,CreateDate]' --output json | jq -c '.[] | select(. != null)' | while read key_data; do
-    key_id=$(echo $key_data | jq -r '.[0]')
-    create_date=$(echo $key_data | jq -r '.[1]')
-    key_date=$(date -d "$create_date" +%s)
-    let age_days=($current_date-$key_date)/86400
-    if [ $age_days -gt 180 ]; then
-      echo "User $user has an active Access Key $key_id older than 180 days."
-      jq -c --arg user "$user" --arg key_id "$key_id" --arg age_days "$age_days" '. += [{"user": $user, "key_id": $key_id, "age_days": $age_days}]' $output_dir/expired_access_keys.json > $output_dir/temp.json && mv $output_dir/temp.json $output_dir/expired_access_keys.json
-    fi
-  done
-done
+# 프로젝트 내 최고 권한(소유자) 인증을 위한 초대 수락
+echo "Accepting invitation for the highest privilege..."
+# Note: This step typically involves manual action via email or GCP console.
 
-echo "Audit complete. Results saved in $output_dir."
+# 권한 확인
+echo "Checking final permissions..."
+gcloud projects get-iam-policy project-id
+
+echo "IAM configuration completed. Check JSON for detailed output."
