@@ -1,25 +1,55 @@
 #!/bin/bash
 
-# 디렉터리 설정
-output_dir="./aws_iam_tags_audit"
-mkdir -p $output_dir
+{
+  "분류": "계정 관리",
+  "코드": "1.3",
+  "위험도": "중요도 중",
+  "진단_항목": "Cloud ID 사용자 패스워드 정책 관리",
+  "대응방안": {
+    "설명": "Cloud ID 사용자 계정을 통한 서비스 접근 시 강력한 패스워드 정책 적용으로 보안을 강화해야 합니다. 패스워드는 다양한 문자 유형을 조합하여 설정하고, 예측 가능한 정보를 기반으로 한 패스워드 사용을 금지합니다.",
+    "설정방법": [
+      "G Suite 계정의 패스워드 복잡도 설정",
+      "패스워드 만료 기간 및 재사용 제한 설정",
+      "비밀번호 정책의 정기적인 검토 및 업데이트",
+      "사용자 교육을 통한 보안 인식 강화"
+    ]
+  },
+  "현황": [],
+  "진단_결과": ""
+}
 
-# IAM 사용자 태그 조회 및 진단
-echo "Fetching IAM Users and evaluating tags..."
-aws iam list-users --output json > $output_dir/users.json
 
-# 태그 평가 및 결과 저장
-echo "[]" > $output_dir/tag_audit_results.json  # 초기 JSON 배열 파일 생성
+# Ensure gcloud is installed and PATH is set
+if ! command -v gcloud &> /dev/null
+then
+    echo "gcloud could not be found, please install and retry."
+    exit 1
+fi
 
-jq -r '.Users[] | .UserName' $output_dir/users.json | while read user; do
-  user_tags=$(aws iam list-user-tags --user-name "$user" --output json)
-  name_tag=$(echo $user_tags | jq -r '.Tags[] | select(.Key == "Name") | .Value')
-  email_tag=$(echo $user_tags | jq -r '.Tags[] | select(.Key == "Email") | .Value')
-  department_tag=$(echo $user_tags | jq -r '.Tags[] | select(.Key == "Department") | .Value')
+# Authenticate the user in the GCP environment
+echo "Authenticating user..."
+gcloud auth login --brief
 
-  # 결과 생성 및 저장
-  jq -n --arg user "$user" --arg name_tag "$name_tag" --arg email_tag "$email_tag" --arg department_tag "$department_tag" \
-  '{"user": $user, "Name": $name_tag, "Email": $email_tag, "Department": $department_tag}' >> $output_dir/tag_audit_results.json
-done
+# Set the project
+echo "Enter your project ID:"
+read project_id
+gcloud config set project "$project_id"
 
-echo "Audit complete. Results saved in $output_dir."
+# List all service accounts
+echo "Listing all service accounts..."
+gcloud iam service-accounts list
+
+# Create a new service account
+echo "Enter a new service account name:"
+read service_account_name
+gcloud iam service-accounts create "$service_account_name" --description "New service account for managing GCP resources."
+
+# Assign roles to the new service account
+echo "Assigning roles..."
+gcloud projects add-iam-policy-binding "$project_id" --member "serviceAccount:${service_account_name}@${project_id}.iam.gserviceaccount.com" --role "roles/owner"
+
+# Check if the service account has the expected roles
+echo "Verifying roles assigned to ${service_account_name}..."
+gcloud projects get-iam-policy "$project_id" --flatten="bindings[].members" --format='table(bindings.role)' --filter="bindings.members:${service_account_name}@${project_id}.iam.gserviceaccount.com"
+
+echo "GCP CLI setup and service account configuration complete."
