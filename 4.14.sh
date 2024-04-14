@@ -4,47 +4,50 @@
   "분류": "운영 관리",
   "코드": "4.14",
   "위험도": "중요도 중",
-  "진단_항목": "EKS Cluster 제어 플레인 로깅 설정",
+  "진단_항목": "로그 보관 설정",
   "대응방안": {
-    "설명": "Amazon EKS 제어 플레인 로깅은 Amazon EKS 제어 플레인에서 계정의 CloudWatch Logs로 직접 감사 및 진단 로그를 제공합니다. 이러한 로그를 사용하면 Cluster를 쉽게 보호하고 실행할 수 있습니다. 필요한 정확한 로그 유형을 선택할 수 있으며, 로그는 CloudWatch의 각 Amazon EKS Cluster에 대한 그룹에 로그 스트림으로 전송됩니다.",
+    "설명": "Cloud Logging은 GCP에서 활용되는 로그를 효과적으로 관리하고 분석합니다. 로그 버킷을 통해 데이터를 지역적으로 분리하여 보관할 수 있으며, 설정된 기간 동안 보안 로그를 안전하게 유지합니다. 로그 보관 정책을 통해 필요한 기간 동안 데이터를 보존함으로써 컴플라이언스와 보안 표준을 유지할 수 있습니다.",
     "설정방법": [
-      "EKS Cluster 접근",
-      "Observability 메뉴 확인",
-      "제어 플레인 로깅 관리 설정",
-      "로그 유형 별 On/Off 설정 후 변경 사항 저장",
-      "설정된 제어 플레인 로깅 확인",
-      "CloudWatch의 로그 그룹 확인",
-      "저장된 유형 별 로그 스트림 확인"
+      "Google Cloud Console에 로그인 후 Cloud Logging으로 이동",
+      "로그 버킷 만들기를 선택하고, 필요한 정보와 리전을 설정",
+      "보관 기간 설정 후 로그 버킷을 생성",
+      "생성된 로그 버킷의 보관 기간을 확인"
     ]
   },
   "현황": [],
-  "진단_결과": "양호"  // '취약'으로 업데이트 가능
+  "진단_결과": "양호"
 }
 
 
-# List all EKS clusters and their control plane logging settings
-eks_logging_output=$(aws eks list-clusters --query 'clusters' --output text)
-if [ $? -eq 0 ]; then
-    echo "Retrieved EKS clusters:"
-    echo "$eks_logging_output"
-else
-    echo "Failed to retrieve EKS clusters."
-    exit 1
-fi
+# Set your project ID
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# User prompt to check a specific EKS cluster for control plane logging
-read -p "Enter EKS Cluster name to check logging settings: " eks_cluster_name
+# Function to create a log bucket with specified retention days
+create_log_bucket() {
+  BUCKET_NAME=$1
+  LOCATION=$2
+  RETENTION_DAYS=$3
+  echo "Creating log bucket: $BUCKET_NAME in location: $LOCATION with retention days: $RETENTION_DAYS..."
+  gcloud logging buckets create $BUCKET_NAME \
+    --location=$LOCATION \
+    --retention-days=$RETENTION_DAYS
+}
 
-# Check control plane logging settings for the specific EKS cluster
-control_plane_logging_output=$(aws eks describe-cluster --name "$eks_cluster_name" --query 'cluster.logging.clusterLogging[*].types' --output json)
-if [ $? -eq 0 ]; then
-    enabled_logs=$(echo "$control_plane_logging_output" | jq '.[] | select(.enabled == true) | .types[]')
-    if [ -n "$enabled_logs" ]; then
-        echo "EKS Cluster '$eks_cluster_name' has the following control plane logging enabled: $enabled_logs"
-    else
-        echo "EKS Cluster '$eks_cluster_name' does not have control plane logging enabled or it is not active."
-    fi
-else
-    echo "Failed to retrieve control plane logging settings for EKS Cluster '$eks_cluster_name'."
-    exit 1
-fi
+# Function to update log bucket retention days
+update_log_bucket_retention() {
+  BUCKET_NAME=$1
+  RETENTION_DAYS=$2
+  echo "Updating log bucket: $BUCKET_NAME with new retention days: $RETENTION_DAYS..."
+  gcloud logging buckets update $BUCKET_NAME \
+    --retention-days=$RETENTION_DAYS
+}
+
+# Example usage of the functions
+# Uncomment the following lines to create or update log buckets as needed:
+
+# Create a new log bucket
+# create_log_bucket "your-log-bucket-name" "global" 365
+
+# Update an existing log bucket retention days
+# update_log_bucket_retention "your-log-bucket-name" 365
