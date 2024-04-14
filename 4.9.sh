@@ -4,40 +4,42 @@
   "분류": "운영 관리",
   "코드": "4.9",
   "위험도": "중요도 중",
-  "진단_항목": "RDS 로깅 설정",
+  "진단_항목": "통신 구간 암호화 설정",
   "대응방안": {
-    "설명": "Amazon CloudWatch Logs를 통해 Amazon RDS 인스턴스의 로그를 모니터링, 저장 및 액세스할 수 있습니다. 데이터베이스 옵션을 수정하여 로그 그룹에 등록된 로그 스트림을 통해 RDS 로그를 확인할 수 있습니다.",
+    "설명": "클라우드 리소스를 이용해 데이터를 송수신할 때 중간에서 공격자에 의해 정보가 가로채지 않도록 통신 구간을 암호화해야 합니다. 이는 중요 정보의 안전한 전송을 보장하고 데이터 유출 위험을 최소화합니다.",
     "설정방법": [
-      "RDS 내 데이터베이스 수정",
-      "데이터베이스 수정 페이지 접근",
-      "로그 내보내기 옵션 선택",
-      "DB 인스턴스 수정 클릭",
-      "로그 그룹 확인 및 클릭",
-      "로그 스트림 확인 및 클릭",
-      "로그 스트림 내 RDS 로깅 확인"
+      "중요 정보 전송 시 이동 구간 암호화: VPN, SSH 등을 사용한 서버 원격 접근",
+      "응용 프로그램과 클라이언트 간 전송에는 SSL 방식 사용",
+      "DBMS와 연결하는 데이터 전송에는 SSL 방식 또는 SSH 방식 사용",
+      "운영체제 수준에서의 디스크 암호화",
+      "문서 및 보조 저장 매체에 대한 암호화 적용"
     ]
   },
   "현황": [],
-  "진단_결과": "양호"  // '취약'으로 업데이트 가능
+  "진단_결과": "양호"
 }
 
 
-# List all RDS instances and check for logging settings
-rds_instances_output=$(aws rds describe-db-instances --query 'DBInstances[*].[DBInstanceIdentifier, DBInstanceStatus]' --output text)
-if [ $? -eq 0 ]; then
-    echo "$rds_instances_output"
-else
-    echo "Failed to retrieve RDS instances."
-    exit 1
-fi
+# Set your project ID
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# User prompt to check a specific DB Instance Identifier for logging
-read -p "Enter DB Instance Identifier to check logging status: " db_instance_id
+# Enabling SSL on a Cloud SQL instance
+INSTANCE_ID="your-instance-id"
+echo "Configuring SSL for Cloud SQL instance..."
 
-# Check logging settings in CloudWatch for the specific RDS instance
-logging_status_output=$(aws rds describe-db-log-files --db-instance-identifier "$db_instance_id" --query 'DescribeDBLogFiles[*].[LogFileName]' --output json)
-if [[ $(echo "$logging_status_output" | jq '. | length') -gt 0 ]]; then
-    echo "DB Instance '$db_instance_id' has logging enabled and logs are accessible in CloudWatch."
-else
-    echo "DB Instance '$db_instance_id' does not have proper logging setup or logs are not accessible."
-fi
+# List current SSL certs for the instance
+echo "Existing SSL certs:"
+gcloud sql ssl-certs list --instance $INSTANCE_ID
+
+# Create a new SSL cert
+CERT_NAME="new-ssl-cert"
+gcloud sql ssl-certs create $CERT_NAME $CERT_NAME.pem --instance=$INSTANCE_ID
+
+# Retrieve and configure the instance to only allow SSL connections
+gcloud sql instances patch $INSTANCE_ID --require-ssl
+
+echo "SSL configuration has been applied. New cert details:"
+gcloud sql ssl-certs describe $CERT_NAME --instance=$INSTANCE_ID
+
+echo "Make sure to configure your database clients to use SSL with the provided cert."

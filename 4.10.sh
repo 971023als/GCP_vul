@@ -4,44 +4,47 @@
   "분류": "운영 관리",
   "코드": "4.10",
   "위험도": "중요도 중",
-  "진단_항목": "S3 버킷 로깅 설정",
+  "진단_항목": "감사 로그 기록 및 관리",
   "대응방안": {
-    "설명": "S3(Simple Storage Service)는 기본적으로 서버 액세스 로그를 수집하지 않으며, AWS Management 콘솔을 통해 S3 버킷에 대한 서버 액세스 로깅을 활성화시킬 수 있습니다. 로깅을 활성화하면, S3 액세스 로그가 사용자가 선택한 대상 버킷에 저장되며, 로그 레코드에는 요청 유형, 요청된 리소스, 요청 처리 날짜 및 시간 등이 포함됩니다. 대상 버킷은 원본 버킷과 동일한 AWS 리전에 있어야 합니다.",
+    "설명": "Google Cloud의 감사 로그 기능을 사용하여 관리자 활동, 시스템 이벤트, 데이터 액세스, 정책 거부에 대한 상세한 정보를 로그로 기록하고 관리할 수 있습니다. 이를 통해 '누가, 언제, 어디서, 무엇을 했는지' 파악할 수 있으며, 보안 감사 및 준수 검증에 필수적인 자료를 제공합니다.",
     "설정방법": [
-      "CloudTrail 대시보드 진입 및 로깅 내용 확인",
-      "CloudTrail 추적 로그 위치 확인",
-      "CloudTrail 추적 로그 S3 버킷 위치 접근",
-      "S3 버킷 서버 액세스 로깅 비활성화 확인 및 편집 버튼 클릭",
-      "S3 버킷 서버 액세스 로깅 활성화",
-      "S3 버킷 서버 액세스 로깅 활성화 확인"
+      "IAM 및 관리자 페이지 내 감사 로그 설정: [관리 콘솔] > [IAM 및 관리자] > [감사 로그]",
+      "기본 설정된 감사 로그 확인 및 필요에 따라 변경",
+      "변경 사항 저장 후 로그 탐색기를 통해 로그 확인: [관리 콘솔] > [로그 기록] > [로그 탐색기]"
     ]
   },
   "현황": [],
-  "진단_결과": "양호"  // '취약'으로 업데이트 가능
+  "진단_결과": "양호"
 }
 
 
-# List all S3 buckets and check for server access logging settings
-s3_buckets_output=$(aws s3api list-buckets --query 'Buckets[*].Name' --output text)
-if [ $? -eq 0 ]; then
-    echo "$s3_buckets_output"
-else
-    echo "Failed to retrieve S3 buckets."
-    exit 1
-fi
+# Set your project ID
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# User prompt to check a specific S3 bucket for logging
-read -p "Enter S3 Bucket name to check logging status: " s3_bucket_name
+# Function to enable audit logs for a specified service
+enable_audit_logs() {
+  SERVICE=$1
+  echo "Enabling audit logs for $SERVICE..."
 
-# Check server access logging status of the S3 bucket
-logging_status_output=$(aws s3api get-bucket-logging --bucket "$s3_bucket_name" --output json)
-if [ $? -eq 0 ]; then
-    if [ -n "$(echo "$logging_status_output" | jq '.LoggingEnabled')" ]; then
-        echo "S3 Bucket '$s3_bucket_name' has server access logging enabled."
-    else
-        echo "S3 Bucket '$s3_bucket_name' does not have server access logging enabled."
-    fi
-else
-    echo "Failed to retrieve logging status for S3 Bucket '$s3_bucket_name'."
-    exit 1
-fi
+  # Enable Data Access logs (if applicable)
+  gcloud services enable $SERVICE.googleapis.com
+  gcloud logging sinks create $SERVICE-audit-logs \
+    storage.googleapis.com/${PROJECT_ID}-audit-logs \
+    --log-filter='logName:"logs/cloudaudit.googleapis.com/data_access" AND resource.type="$SERVICE"' \
+    --project=$PROJECT_ID
+
+  echo "Audit logs enabled for $SERVICE."
+}
+
+# List all Google Cloud services in the project
+echo "Fetching services..."
+gcloud services list --available
+
+# Example: Enable audit logs for Cloud SQL
+echo "Configuring audit logs for Cloud SQL..."
+enable_audit_logs "sqladmin"
+
+# Check if audit logs are properly configured
+echo "Checking audit log configuration..."
+gcloud logging sinks list --project=$PROJECT_ID
