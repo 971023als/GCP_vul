@@ -4,16 +4,14 @@
   "분류": "가상 리소스 관리",
   "코드": "3.10",
   "위험도": "중요도 중",
-  "진단_항목": "ELB 연결 관리",
+  "진단_항목": "Storage 버킷 ACL 관리",
   "대응방안": {
-    "설명": "Elastic Load Balancing은 둘 이상의 가용 영역에서 EC2 인스턴스, 컨테이너, IP 주소 등 여러 대상에 걸쳐 수신되는 트래픽을 자동으로 분산해주는 서비스입니다. ELB의 종류로는 Application Load Balancers, Network Load Balancers, Gateway Load Balancers 및 Classic Load Balancer가 있으며, 이들은 다양한 계층에서 작동하여 애플리케이션과 네트워크 트래픽을 관리합니다.",
+    "설명": "Cloud Storage는 Cloud IAM 및 ACL을 통해 버킷과 객체에 대한 액세스 권한을 제어합니다. Cloud IAM은 프로젝트 및 버킷 수준에서 권한을 부여하는 반면, ACL은 객체 단위로 미세 조정된 권한을 제공합니다.",
     "설정방법": [
-      "ELB 리스너 추가",
-      "리스너 보안 설정 (TLS 적용)",
-      "적용된 TLS 설정 확인",
-      "가용 영역 설정 (AZ 2개 영역 이상 설정 권고)",
-      "ELB에 대한 트래픽 제어 보안그룹 생성 및 수정",
-      "ELB [속성] 내 모니터링 (액세스 로그) 설정 확인"
+      "Cloud Storage에서 버킷 생성: 관리 콘솔 > Cloud Storage > 버킷 > 버킷 생성",
+      "액세스 제어 모델 선택 및 버킷 생성",
+      "버킷 권한 설정 및 IAM 역할 할당",
+      "개별 객체에 대한 ACL 설정"
     ]
   },
   "현황": [],
@@ -21,47 +19,31 @@
 }
 
 
-# Check for aws CLI tools
-if ! command -v aws &> /dev/null; then
-    echo "AWS CLI is not installed. Please install AWS CLI to run this script."
-    exit 1
-fi
+# Set your GCP project ID
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# List all ELBs in the region
-echo "Retrieving ELBs..."
-elb_output=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[*].{LoadBalancerName:LoadBalancerName, Type:Type}' --output json)
-if [ $? -ne 0 ]; then
-    echo "Failed to retrieve ELBs. Please check your AWS CLI setup and permissions."
-    exit 1
-fi
+# Create a new storage bucket
+BUCKET_NAME="my-storage-bucket"
+echo "Creating a new storage bucket..."
+gcloud storage buckets create $BUCKET_NAME --location US
 
-if [ -z "$elb_output" ]; then
-    echo "No ELBs found."
-    exit 0
-fi
+# Set IAM policy for the bucket
+echo "Setting IAM policy for the bucket..."
+gcloud storage buckets add-iam-policy-binding $BUCKET_NAME \
+    --member='user:example-user@gmail.com' \
+    --role='roles/storage.objectViewer'
 
-echo "ELBs found:"
-echo "$elb_output"
+# List the current ACLs for the bucket
+echo "Current ACLs for the bucket:"
+gsutil acl get gs://$BUCKET_NAME
 
-# User prompt to check a specific ELB
-read -p "Enter ELB name to check configuration: " elb_name
+# Update ACL to give a user access
+echo "Updating ACL to give a user read access..."
+gsutil acl ch -u example-user@gmail.com:R gs://$BUCKET_NAME
 
-# Check specific ELB configuration
-echo "Checking configuration for ELB '$elb_name'..."
-elb_config=$(aws elbv2 describe-load-balancers --names "$elb_name" --query 'LoadBalancers[*].{DNSName:DNSName, Type:Type}' --output json)
-if [ $? -ne 0 ]; then
-    echo "Failed to retrieve configuration for ELB '$elb_name'. Please check the ELB name and your permissions."
-    exit 1
-fi
+# Verify updated ACL settings
+echo "Verifying updated ACL settings..."
+gsutil acl get gs://$BUCKET_NAME
 
-echo "ELB Configuration for '$elb_name':"
-echo "$elb_config"
-
-# Analyze the configuration for compliance
-# Simulation: Assuming compliance is checked against specific criteria
-compliance_status="양호"  # This would be determined by actual checks in a real script
-
-# Update JSON diagnostic result directly using jq and sponge
-echo "Updating diagnosis result..."
-jq --arg status "$compliance_status" '.진단_결과 = $status' diagnosis.json | sponge diagnosis.json
-echo "Diagnosis updated with result: $compliance_status"
+# Remember to replace 'your-project-id', 'my-storage-bucket', and 'example-user@gmail.com' with your actual project ID, desired bucket name, and user email.

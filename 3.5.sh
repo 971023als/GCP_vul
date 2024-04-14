@@ -3,13 +3,13 @@
 {
   "분류": "가상 리소스 관리",
   "코드": "3.5",
-  "위험도": "중요도 하",
-  "진단_항목": "인터넷 게이트웨이 연결 관리",
+  "위험도": "중요도 상",
+  "진단_항목": "네트워크 방화벽 인/아웃바운드 불필요 정책 관리",
   "대응방안": {
-    "설명": "인터넷 게이트웨이는 수평 확장되고 가용성이 높은 중복 VPC 구성요소로, VPC의 인스턴스와 인터넷 간에 통신이 가능할 수 있게 해주는 기능이며 네트워크 트래픽 가용성 위험이나 대역폭 제약조건이 별도로 발생하진 않습니다. 인터넷 게이트웨이는 VPC 라우팅 테이블에 인터넷 Route 가능 트래픽에 대한 대상을 제공하며, 퍼블릭 IPv4 주소가 할당된 인스턴스에 대해 NAT를 수행합니다. 이는 IPv4, IPv6 트래픽을 모두 지원합니다.",
+    "설명": "VPC 방화벽 규칙은 특정 프로젝트 및 네트워크에 적용되며, 지정한 구성을 기준으로 가상 머신(VM) 인스턴스 간의 연결을 허용하거나 거부할 수 있습니다. 이 규칙들은 인스턴스의 구성이나 운영 체제와 관계없이 작동하며, 트래픽의 소스와 목적지를 기준으로 특정 트래픽 유형을 대상으로 할 수 있습니다.",
     "설정방법": [
-      "인터넷 게이트웨이 설정 확인",
-      "VPC → '인터넷 게이트웨이' → '인터넷 게이트웨이' 선택 → 작업 → VPC에서 분리하여 인터넷 게이트웨이 삭제 방법"
+      "[메인] > [VPC 네트워크] > [방화벽] - 방화벽 규칙 설정",
+      "방화벽 규칙의 소스 및 목적지 기준으로 불필요한 정책 식별 및 수정"
     ]
   },
   "현황": [],
@@ -17,44 +17,27 @@
 }
 
 
-# Ensure jq is installed
-if ! command -v jq &> /dev/null
-then
-    echo "jq could not be found, please install it to run this script."
-    exit 1
-fi
+# Set the GCP project ID
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# List all Internet Gateways and their VPC Connections
-internet_gateways_output=$(aws ec2 describe-internet-gateways --query 'InternetGateways[*].[InternetGatewayId, Attachments]' --output text)
-if [ $? -eq 0 ]; then
-    echo "Internet Gateways and VPC Attachments:"
-    echo "$internet_gateways_output"
-else
-    echo "Failed to retrieve Internet Gateways. Please check your AWS CLI setup and permissions."
-    exit 1
-fi
+# List all firewall rules in the VPC network
+echo "Listing all VPC firewall rules..."
+gcloud compute firewall-rules list
 
-# User prompt to check a specific Internet Gateway
-echo "Available Internet Gateways:"
-echo "$internet_gateways_output" | awk '{print $1}'  # Assuming the first column is the ID
-read -p "Enter Internet Gateway ID to check: " internet_gateway_id
+# Review specific firewall rule
+echo "Reviewing specific firewall rule..."
+read -p "Enter the firewall rule name to review: " firewall_rule_name
+gcloud compute firewall-rules describe $firewall_rule_name
 
-# Check for unnecessary NAT Gateways connected to the Internet Gateway
-nat_gateway_output=$(aws ec2 describe-nat-gateways --filter "Name=internet-gateway-id,Values=$internet_gateway_id" --query 'NatGateways' --output json)
-if [ $? -eq 0 ]; then
-    nat_gateway_count=$(echo "$nat_gateway_output" | jq '. | length')
-    if [ "$nat_gateway_count" -eq "0" ]; then
-        echo "Internet Gateway '$internet_gateway_id' has no unnecessary NAT Gateways connected."
-        exit_status="양호"
-    else
-        echo "Internet Gateway '$internet_gateway_id' has one or more unnecessary NAT Gateways connected."
-        exit_status="취약"
-    fi
-else
-    echo "Failed to retrieve NAT Gateway information. Please check your AWS CLI setup and permissions."
-    exit 1
-fi
+# Update a firewall rule in VPC
+echo "Updating a VPC firewall rule..."
+gcloud compute firewall-rules update $firewall_rule_name \
+    --description="Updated to eliminate unnecessary open ports" \
+    --rules=tcp:443,tcp:80
+echo "Firewall rule updated."
 
-# Update JSON diagnostic result
-jq --arg status "$exit_status" '.진단_결과 = $status' diagnosis.json | sponge diagnosis.json
-echo "Diagnosis updated with result: $exit_status"
+# Delete unnecessary or risky firewall rule in VPC
+read -p "Enter the name of the firewall rule to delete if found unnecessary: " rule_name
+gcloud compute firewall-rules delete $rule_name --quiet
+echo "Firewall rule $rule_name deleted."

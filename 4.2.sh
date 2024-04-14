@@ -4,15 +4,12 @@
   "분류": "운영 관리",
   "코드": "4.2",
   "위험도": "중요도 중",
-  "진단_항목": "RDS 암호화 설정",
+  "진단_항목": "Compute Engine 이미지 암호화 설정",
   "대응방안": {
-    "설명": "RDS는 데이터 보호를 위해 DB 인스턴스에서 암호화 옵션 기능을 제공하며, 암호화 시 AES-256 암호화 알고리즘을 이용하여 DB 인스턴스의 모든 로그, 백업 및 스냅샷 암호화가 가능합니다.",
+    "설명": "Compute Engine 이미지는 자동으로 Google의 암호화 키로 암호화됩니다. 사용자는 'Google 관리 키', '고객 관리 키', '고객 제공 키'를 선택하여 이미지를 암호화할 수 있습니다. 고객 제공 키와 고객 관리 키 사용 시, 주기적인 키 변경이 필요합니다.",
     "설정방법": [
-      "데이터베이스 클릭",
-      "DB 생성 방식 및 엔진 등 설정",
-      "데이터베이스 암호화 설정",
-      "데이터베이스 생성 확인",
-      "데이터베이스 암호화 확인"
+      "이미지 암호화키 설정: Compute Engine에서 이미지 만들기 선택, 이미지 정보 및 암호화 키 타입 설정, KMS를 통한 고객 관리 키 선택 및 적용",
+      "암호화키 생성 및 순환주기 설정: Key Management에서 키링 및 키 생성, 키 순환 주기 설정 및 적용"
     ]
   },
   "현황": [],
@@ -20,51 +17,30 @@
 }
 
 
-# Check for aws CLI tools
-if ! command -v aws &> /dev/null; then
-    echo "AWS CLI is not installed. Please install AWS CLI to run this script."
-    exit 1
-fi
+# Set Google Cloud project
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# List all RDS instances with their encryption status
-echo "Retrieving RDS instances and encryption status..."
-rds_instances_output=$(aws rds describe-db-instances --query 'DBInstances[*].{DBInstanceIdentifier:DBInstanceIdentifier, StorageEncrypted:StorageEncrypted}' --output json)
-if [ $? -ne 0 ]; then
-    echo "Failed to retrieve RDS instances. Please check your AWS CLI setup and permissions."
-    exit 1
-fi
+# Specify the disk and image names
+DISK_NAME="source-disk"
+IMAGE_NAME="encrypted-image"
 
-if [ -z "$rds_instances_output" ]; then
-    echo "No RDS instances found."
-    exit 0
-fi
+# Create a disk from which the image will be created
+echo "Creating a source disk..."
+gcloud compute disks create $DISK_NAME --size 100GB --zone us-central1-a --type pd-standard
 
-echo "RDS Instances and Encryption Status:"
-echo "$rds_instances_output"
+# Setup for Customer-Managed Encryption Keys (CMEK)
+echo "Setting up Customer-Managed Encryption Keys..."
+KMS_KEYRING="my-keyring"
+KMS_KEY="my-image-encryption-key"
+KMS_LOCATION="global"
 
-# User prompt to check a specific RDS instance
-read -p "Enter RDS instance identifier to check encryption status: " db_instance_identifier
+# Create a Keyring and Key
+gcloud kms keyrings create $KMS_KEYRING --location $KMS_LOCATION
+gcloud kms keys create $KMS_KEY --keyring $KMS_KEYRING --location $KMS_LOCATION --purpose encryption
 
-# Check specific RDS instance encryption status
-echo "Checking encryption status for RDS instance '$db_instance_identifier'..."
-db_encryption_status=$(aws rds describe-db-instances --db-instance-identifier "$db_instance_identifier" --query 'DBInstances[*].StorageEncrypted' --output text)
-if [ $? -ne 0 ]; then
-    echo "Failed to retrieve encryption status for RDS instance '$db_instance_identifier'. Please check the instance identifier and your permissions."
-    exit 1
-fi
+# Create an image using the Customer-Managed Key
+echo "Creating an encrypted image from the disk..."
+gcloud compute images create $IMAGE_NAME --source-disk $DISK_NAME --source-disk-zone us-central1-a --kms-key projects/$PROJECT_ID/locations/$KMS_LOCATION/keyRings/$KMS_KEYRING/cryptoKeys/$KMS_KEY
 
-echo "Encryption Status for '$db_instance_identifier': $db_encryption_status"
-
-# Determine the security status based on encryption status
-if [[ "$db_encryption_status" == "true" ]]; then
-    echo "RDS instance '$db_instance_identifier' is encrypted."
-    exit_status="양호"
-else
-    echo "RDS instance '$db_instance_identifier' is not encrypted."
-    exit_status="취약"
-fi
-
-# Update JSON diagnostic result directly using jq and sponge
-echo "Updating diagnosis result..."
-jq --arg status "$exit_status" '.진단_결과 = $status' diagnosis.json | sponge diagnosis.json
-echo "Diagnosis updated with result: $exit_status"
+echo "Setup complete. Image created with specified encryption settings."

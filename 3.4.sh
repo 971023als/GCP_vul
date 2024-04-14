@@ -1,48 +1,50 @@
 #!/bin/bash
 
-# Initialize variables simulating JSON data structure
-declare -A diagnostic_data=(
-    [분류]="가상 리소스 관리"
-    [코드]="3.4"
-    [위험도]="중요도 중"
-    [진단_항목]="라우팅 테이블 정책 관리"
-    [대응방안]="라우팅 테이블에는 네트워크 트래픽을 전달할 위치 결정 시 사용되는 규칙입니다. VPC의 각 서브넷을 라우팅 테이블에 연결해야 하며, 테이블에서는 서브넷에 대한 라우팅을 제어하게 됩니다. 기본 라우팅 테이블은 다른 라우팅 테이블과 명시적으로 연결되지 않은 모든 서브넷에 대한 라우팅을 제어합니다."
-    [설정방법]="VPC 내 라우팅 테이블 탭 접근 후 라우팅 편집 클릭, 라우팅 테이블 설정 및 저장"
-    [진단_기준]="양호기준: 라우팅 테이블 내 ANY 정책이 설정되어 있지 않고 서비스 타깃 별로 설정되어 있을 경우, 취약기준: 라우팅 테이블 내 ANY 정책이 설정되어 있거나 서비스 타깃 별로 설정되어 있지 않을 경우"
-    [현황]="[]"
-    [진단_결과]="진단 필요"
-)
 
-echo "Fetching Routing Tables..."
+{
+  "분류": "가상 리소스 관리",
+  "코드": "3.4",
+  "위험도": "중요도 상",
+  "진단_항목": "네트워크 방화벽 인/아웃바운드 ANY 설정 관리",
+  "대응방안": {
+    "설명": "VPC 방화벽 규칙은 인스턴스와 다른 네트워크 사이, 그리고 동일 네트워크 내의 인스턴스 간 통신을 허용하거나 거부할 수 있도록 도와줍니다. 이 규칙들은 인스턴스의 구성이나 운영 체제와 관계없이 작동하며, 네트워크 수준에서 정의되어 인스턴스별로 연결을 관리합니다.",
+    "설정방법": [
+      "[메인] > [VPC 네트워크] > [방화벽] - 방화벽 규칙 설정",
+      "방화벽 규칙(송/수신) 내 프로토콜/포트 확인"
+    ]
+  },
+  "현황": [],
+  "진단_결과": "양호"
+}
 
-# Retrieve all Routing Tables
-routing_tables_output=$(aws ec2 describe-route-tables --query 'RouteTables[*].[RouteTableId, Routes]' --output text)
-echo "Available Routing Tables:"
-echo "$routing_tables_output"
 
-# User prompt to select a specific Routing Table
-read -p "Enter Routing Table ID to check policies: " rt_id
+# Set the GCP project ID
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# Display the selected Routing Table's policies
-echo "Routing Table Policies:"
-aws ec2 describe-route-tables --route-table-id "$rt_id" --query 'RouteTables[*].Routes' --output json
+# List all firewall rules in the VPC network
+echo "Listing all VPC firewall rules..."
+gcloud compute firewall-rules list
 
-# Assessing the Routing Table policies based on user checks
-echo "Review the policies displayed above."
-read -p "Does this Routing Table contain ANY policies or lacks service target specific policies? (yes/no): " policy_check
+# Create a firewall rule in VPC
+echo "Creating a new VPC firewall rule..."
+gcloud compute firewall-rules create example-firewall-rule \
+    --direction=INGRESS \
+    --priority=1000 \
+    --network=default \
+    --action=ALLOW \
+    --rules=tcp:22,tcp:80 \
+    --source-ranges="192.168.1.0/24"
+echo "Firewall rule created."
 
-if [ "$policy_check" = "yes" ]; then
-    echo "Routing Table contains ANY policies or lacks service target specific policies. It is vulnerable."
-    diagnostic_data[진단_결과]="취약"
-else
-    echo "Routing Table policies are appropriate without ANY policies and are service target specific. It is satisfactory."
-    diagnostic_data[진단_결과]="양호"
-fi
+# Update a firewall rule in VPC
+echo "Updating a VPC firewall rule..."
+gcloud compute firewall-rules update example-firewall-rule \
+    --priority=900 \
+    --rules=tcp:443,tcp:80
+echo "Firewall rule updated."
 
-# Output final assessment
-echo "진단 결과: ${diagnostic_data[진단_결과]}"
-
-# Output all diagnostic data
-for key in "${!diagnostic_data[@]}"; do
-    echo "$key: ${diagnostic_data[$key]}"
-done
+# Delete a firewall rule in VPC
+read -p "Enter the name of the firewall rule to delete: " rule_name
+gcloud compute firewall-rules delete $rule_name --quiet
+echo "Firewall rule $rule_name deleted."

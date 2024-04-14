@@ -4,22 +4,12 @@
   "분류": "운영 관리",
   "코드": "4.1",
   "위험도": "중요도 중",
-  "진단_항목": "EBS 및 볼륨 암호화 설정",
+  "진단_항목": "Compute Engine 디스크 암호화 설정",
   "대응방안": {
-    "설명": "EBS는 EC2 인스턴스 생성 및 이용 시 사용되는 블록 형태의 스토리지 볼륨이며, AES-256 알고리즘을 사용하여 볼륨 암호화를 지원합니다. 이는 데이터 및 애플리케이션에 대한 보안을 강화하여 안전하게 정보를 저장할 수 있게 해줍니다.",
+    "설명": "Compute Engine은 인스턴스 외부에서 영구 디스크 저장소 공간으로 이동하기 전에 데이터를 자동으로 암호화합니다. 사용자는 시스템 정의 키, 고객 제공 키, 고객 관리 키 중 하나를 사용하여 데이터를 암호화할 수 있습니다.",
     "설정방법": [
-      "인스턴스 시작 클릭",
-      "AMI 선택",
-      "인스턴스 유형 선택",
-      "인스턴스 구성",
-      "스토리지 추가",
-      "태그 추가",
-      "보안 그룹 구성",
-      "스토리지 암호화 여부 확인",
-      "EC2 인스턴스 클릭 및 스토리지 클릭",
-      "스토리지 암호화 설정여부 확인",
-      "Elastic Block Store 메뉴 내 볼륨 기능 선택",
-      "볼륨 생성 메뉴 내 '암호화' 활성화 후 KMS 키 값을 추가하여 설정"
+      "디스크 암호화키 설정: Compute Engine에서 디스크 만들기 선택, 디스크 정보 및 암호화 키 타입 설정, KMS를 통한 고객 관리 키 선택 및 적용",
+      "암호화키 생성 및 순환주기 설정: Key Management에서 키링 및 키 생성, 키 순환 주기 설정 및 적용"
     ]
   },
   "현황": [],
@@ -27,47 +17,26 @@
 }
 
 
-# Check for aws CLI tools
-if ! command -v aws &> /dev/null; then
-    echo "AWS CLI is not installed. Please install AWS CLI to run this script."
-    exit 1
-fi
+# Set Google Cloud project
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# List all EBS volumes with their encryption status
-echo "Retrieving EBS volumes and encryption status..."
-ebs_volumes_output=$(aws ec2 describe-volumes --query 'Volumes[*].{VolumeId:VolumeId, Encrypted:Encrypted}' --output json)
-if [ $? -ne 0 ]; then
-    echo "Failed to retrieve EBS volumes. Please check your AWS CLI setup and permissions."
-    exit 1
-fi
+# Create a disk with Google-managed encryption keys
+echo "Creating a disk with Google-managed encryption keys..."
+gcloud compute disks create encrypted-disk --size 100GB --zone us-central1-a --type pd-standard --encryption-key-type google-managed
 
-if [ -z "$ebs_volumes_output" ]; then
-    echo "No EBS volumes found."
-    exit 0
-fi
+# Setup for Customer-Managed Encryption Keys (CMEK)
+echo "Setting up Customer-Managed Encryption Keys..."
+KMS_KEYRING="my-keyring"
+KMS_KEY="my-encryption-key"
+KMS_LOCATION="global"
 
-echo "EBS Volumes found:"
-echo "$ebs_volumes_output"
+# Create a Keyring and Key
+gcloud kms keyrings create $KMS_KEYRING --location $KMS_LOCATION
+gcloud kms keys create $KMS_KEY --keyring $KMS_KEYRING --location $KMS_LOCATION --purpose encryption
 
-# Analyze the encryption status for compliance
-compliance_status="양호"  # Assume all volumes must be encrypted for a '양호' status
-echo "Analyzing encryption status of EBS volumes..."
-for row in $(echo "${ebs_volumes_output}" | jq -r '.[] | @base64'); do
-    _jq() {
-     echo ${row} | base64 --decode | jq -r ${1}
-    }
-    volume_id=$(_jq '.VolumeId')
-    encrypted=$(_jq '.Encrypted')
-    if [ "$encrypted" == "false" ]; then
-        echo "Volume $volume_id is not encrypted."
-        compliance_status="취약"
-        break
-    fi
-done
+# Create a disk with the Customer-Managed Key
+echo "Creating a disk with a Customer-Managed Key..."
+gcloud compute disks create cmek-disk --size 100GB --zone us-central1-a --type pd-standard --encryption-key projects/$PROJECT_ID/locations/$KMS_LOCATION/keyRings/$KMS_KEYRING/cryptoKeys/$KMS_KEY
 
-echo "Encryption compliance status: $compliance_status"
-
-# Update JSON diagnostic result directly using jq and sponge
-echo "Updating diagnosis result..."
-jq --arg status "$compliance_status" '.진단_결과 = $status' diagnosis.json | sponge diagnosis.json
-echo "Diagnosis updated with result: $compliance_status"
+echo "Setup complete. Disks created with specified encryption settings."

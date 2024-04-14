@@ -1,31 +1,55 @@
 #!/bin/bash
 
-# 변수 초기화
-분류="계정 관리"
-코드="1.11"
-위험도="중요도 상"
-진단_항목="EKS 사용자 관리"
-대응방안="기본적으로 AWS 계정은 리소스에 대한 접근을 허용하는 최소한의 사용자 수와 권한으로 관리되어야 합니다. AWS에서는 IAM 사용자에게 EKS Cluster에 대한 액세스 권한을 부여할 경우 특정 쿠버네티스 RBAC 그룹에 매핑되는 사용자의 ‘aws-auth’ ConfigMap을 제공합니다. 이 ConfigMap은 초기에는 노드를 Cluster에 연결 목적으로 만들어졌으나 IAM 보안 주체에 역할 기반 액세스 제어(RBAC) 액세스를 추가하여 사용할 수도 있습니다."
-설정방법="가. EKS ConfigMap(aws-auth) 사용자 접근 권한 확인: 1) ConfigMap(aws-auth) 설정 확인, 2) 권한 부여된 계정으로 EKS 리소스 접근 시도, 3) 권한 미부여된 계정으로 EKS 리소스 접근 시도, 나. ClusterRole/ClusterRoleBinding 생성 및 등록: 1) ClusterRole 파일 생성, 2) ClusterRoleBinding 파일 생성, 3) ClusterRole/ClusterRoleBinding 파일 적용, 4) 생성 확인"
-현황=()
-진단_결과=""
+{
+  "분류": "계정 관리",
+  "코드": "1.11",
+  "위험도": "중요도 중",
+  "진단_항목": "GKE 서비스 어카운트 관리",
+  "대응방안": {
+    "설명": "GKE에서 서비스 어카운트는 파드에 쿠버네티스 RBAC 역할을 할당할 수 있는 특수 유형의 개체입니다. 네임스페이스 별로 기본 서비스 어카운트가 자동 생성되며, 파드에 JWT 토큰이 자동으로 마운트됩니다. 애플리케이션이 Kubernetes API 호출이 필요 없는 경우, automountServiceAccountToken을 false로 설정하여 자동 마운트를 비활성화해야 합니다.",
+    "설정방법": [
+      "kubectl 명령어를 사용하여 서비스 어카운트의 automountServiceAccountToken 설정 확인",
+      "특정 서비스 어카운트 또는 네임스페이스의 기본 서비스 어카운트에서 토큰 자동 마운트를 비활성화",
+      "설정 변경 후 Kubernetes API 접근이 필요한 파드에서 수동으로 토큰을 관리"
+    ]
+  },
+  "현황": [],
+  "진단_결과": "양호"
+}
 
-# EKS ConfigMap(aws-auth) 확인
-configmap_status=$(kubectl describe configmap aws-auth -n kube-system)
-if [[ "$configmap_status" == *"system:masters"* ]]; then
-    echo "System:masters role found in aws-auth ConfigMap."
-    진단_결과="취약"
-else
-    echo "System:masters role not found in aws-auth ConfigMap, which is good practice."
-    진단_결과="양호"
+
+# Google Cloud SDK 초기화 및 인증
+if ! command -v gcloud &> /dev/null
+then
+    echo "gcloud가 설치되어 있지 않습니다. Google Cloud SDK를 설치하세요."
+    exit 1
 fi
 
-# 결과 출력
-echo "분류: $분류"
-echo "코드: $코드"
-echo "위험도: $위험도"
-echo "진단_항목: $진단_항목"
-echo "대응방안: $대응방안"
-echo "설정방법: $설정방법"
-echo "현황: ${현황[@]}"
-echo "진단_결과: $진단_결과"
+echo "Google Cloud에 로그인합니다..."
+gcloud auth login
+
+# 프로젝트 설정
+echo "작업할 Google Cloud 프로젝트 ID를 입력하세요:"
+read project_id
+gcloud config set project $project_id
+
+# GKE 클러스터와 서비스 어카운트 설정 확인
+echo "GKE 클러스터의 이름을 입력하세요:"
+read cluster_name
+gcloud container clusters get-credentials $cluster_name
+
+# 서비스 어카운트의 자동 토큰 마운트 설정 확인 및 변경
+echo "자동 토큰 마운트 설정을 확인하고 변경할 네임스페이스 이름을 입력하세요:"
+read namespace
+echo "현재 설정 확인:"
+kubectl get serviceaccount default -n $namespace -o jsonpath='{.automountServiceAccountToken}'
+
+# 설정 변경
+echo "automountServiceAccountToken을 비활성화하시겠습니까? (yes/no)"
+read response
+if [[ $response == "yes" ]]; then
+    kubectl patch serviceaccount default -p '{"automountServiceAccountToken":false}' -n $namespace
+    echo "서비스 어카운트의 토큰 자동 마운트가 비활성화되었습니다."
+else
+    echo "설정 변경을 취소하였습니다."
+fi

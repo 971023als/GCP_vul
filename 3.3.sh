@@ -1,48 +1,48 @@
 #!/bin/bash
 
-# Initialize variables simulating JSON data structure
-declare -A diagnostic_data=(
-    [분류]="가상 리소스 관리"
-    [코드]="3.3"
-    [위험도]="중요도 중"
-    [진단_항목]="네트워크 ACL 인/아웃바운드 트래픽 정책 관리"
-    [대응방안]="네트워크 ACL은 서브넷 내부와 외부의 트래픽을 제어하는 VPC의 선택적 보안 계층입니다. 이를 적절히 설정하면 VPC 내 리소스 보호를 강화할 수 있습니다."
-    [설정방법]="AWS 콘솔 또는 CLI를 통해 네트워크 ACL 설정 접근, 규칙 추가 및 수정을 관리할 수 있습니다."
-    [현황]="[]"
-    [진단_결과]="진단 필요"
-)
+{
+  "분류": "가상 리소스 관리",
+  "코드": "3.3",
+  "위험도": "중요도 중",
+  "진단_항목": "애플리케이션 방화벽",
+  "대응방안": {
+    "설명": "App Engine 방화벽을 사용하여 지정된 IP 주소 범위에서 요청을 허용하거나 거부하는 규칙을 설정할 수 있습니다. 방화벽 규칙은 중요도에 따라 우선순위가 매겨지며, 이는 방화벽 내에서 다른 규칙에 대한 상대적 중요도를 결정합니다. default 규칙은 가장 낮은 우선순위를 가지고 모든 IP에 적용됩니다.",
+    "설정방법": [
+      "[App Engine] > [방화벽 규칙] > [규칙 만들기] - 방화벽 규칙 생성",
+      "적용하고자 하는 서비스에 대한 방화벽 규칙 설정",
+      "방화벽 규칙 생성 확인",
+      "App Engine 방화벽 규칙 적용 확인",
+      "[App Engine] > [방화벽 규칙] > [규칙 선택] > [삭제] - 방화벽 규칙 삭제",
+      "방화벽 규칙 삭제 확인",
+      "방화벽 규칙 적용 확인"
+    ]
+  },
+  "현황": [],
+  "진단_결과": "양호"
+}
 
-echo "Fetching Network ACLs and their rules..."
 
-# Retrieve all Network ACLs
-netacls_output=$(aws ec2 describe-network-acls --query 'NetworkAcls[*].[NetworkAclId, Entries]' --output text)
-echo "Available Network ACLs:"
-echo "$netacls_output"
+# Set the GCP project ID
+PROJECT_ID="your-project-id"
+gcloud config set project $PROJECT_ID
 
-# User prompt to select a specific Network ACL
-read -p "Enter Network ACL ID to check rules: " acl_id
+# Create a firewall rule in App Engine
+echo "Creating a new firewall rule in App Engine..."
+gcloud app firewall-rules create 1000 \
+    --action allow \
+    --source-range "192.168.1.0/24" \
+    --description "Allow traffic from specific IP range"
+echo "Firewall rule created."
 
-# Display the selected Network ACL's rules
-echo "Network ACL Rules:"
-aws ec2 describe-network-acls --network-acl-id "$acl_id" --query 'NetworkAcls[*].Entries' --output json
+# List all firewall rules in App Engine
+echo "Listing all firewall rules..."
+gcloud app firewall-rules list
 
-# Assessing the Network ACL rules based on user checks
-echo "Review the rules displayed above."
-read -p "Are there unnecessary allow policies in inbound rules? (yes/no): " inbound_check
-read -p "Are there unnecessary allow policies in outbound rules? (yes/no): " outbound_check
+# Delete a firewall rule in App Engine
+read -p "Enter the priority of the firewall rule to delete: " rule_priority
+gcloud app firewall-rules delete $rule_priority --quiet
+echo "Firewall rule with priority $rule_priority deleted."
 
-if [ "$inbound_check" = "yes" ] || [ "$outbound_check" = "yes" ]; then
-    echo "At least one unnecessary rule is found. Recommend revising the ACL settings."
-    diagnostic_data[진단_결과]="취약"
-else
-    echo "No unnecessary rules found. ACL settings are appropriate."
-    diagnostic_data[진단_결과]="양호"
-fi
-
-# Output final assessment
-echo "진단 결과: ${diagnostic_data[진단_결과]}"
-
-# Output all diagnostic data
-for key in "${!diagnostic_data[@]}"; do
-    echo "$key: ${diagnostic_data[$key]}"
-done
+# Verify the rules after deletion
+echo "Verifying firewall rules post-deletion..."
+gcloud app firewall-rules list
